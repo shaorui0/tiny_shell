@@ -50,11 +50,12 @@ class Jobs():
     def set_frontend_pid(self, pid):
         self.frontend_pid = pid
 
+jobs = Jobs()
+
 class Shell():
     def __init__(self):
         signal.signal(signal.SIGINT, self.signal_terminal_handler)
         signal.signal(signal.SIGTSTP, self.signal_stop_handler)
-        self.jobs = Jobs()
 
     def loop(self):
         """main loop
@@ -86,17 +87,17 @@ class Shell():
                         #print('A new child ',  os.getpid())
                         #print('》》',  os.getpid())
                         # running
-                        self.jobs.append_process(os.getpid(), command_line)
+                        jobs.append_process(os.getpid(), command_line)
                         os.execve(argvs[0], argvs, newenv) 
                         os._exit(0) # 或者直接在这里？退出时进行一次处理？退出以后，run之前
                     if is_backend is False:
-                        #self.jobs.frontend_pid = newpid # 会不会有并发的问题？启动一个前台的时候可能是在等待的
-                        self.jobs.set_frontend_pid(newpid)
+                        #jobs.frontend_pid = newpid # 会不会有并发的问题？启动一个前台的时候可能是在等待的
+                        jobs.set_frontend_pid(newpid)
                         print('>>> frontend process: ',  newpid)
                         os.waitpid(-1, 0)
                         # terminated 
-                        #self.jobs.update_status(newpid, 'terminated')
-                        print('》》》》》 ',  self.jobs.total_job_map)
+                        #jobs.update_status(newpid, 'terminated')
+                        print('》》》》》 ',  jobs.total_job_map)
                         print("[FRONTEND] parent: %d, child: %d" % (os.getpid(), newpid))
                     else:
                         os.waitpid(-1, os.WNOHANG|os.WCONTINUED)

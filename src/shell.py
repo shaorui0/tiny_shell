@@ -28,59 +28,70 @@ class Shell():
                 command_line = sys.stdin.readline()
                 
                 self.log.info('parse a cmd: {}'.format(command_line))
-                is_normal_command, argvs = self._parse_cmd(command_line)
-                if is_normal_command is False:
+                argvs = self._parse_cmd(command_line)
+                if argvs is None:
                     if command_line == '':
                         sys.stdout.write('\n')
                         sys.stdout.flush()
-                    continue
+                    return
 
-                if not self._is_builtin_cmd(argvs):
-                    is_backend = False
-                    if argvs[len(argvs) - 1] == '&':
-                        is_backend = True
-                        argvs = argvs[:-1]
+                # TODO 判断重定向
 
-                    self.log.info('create a new process...')
-                    newpid = os.fork()
-                    newenv = os.environ.copy() # must get it from parent process
 
-                    # block sigchld
-                    signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGCHLD])
-                    if newpid == 0:
-                        # unblock sigchld in child process
-                        signal.pthread_sigmask(signal.SIG_UNBLOCK, [signal.SIGCHLD])
+                # TODO 判断管道（多次执行）
 
-                        os.setpgid(0, 0) # 单独成组，用于kill
-                        try:
-                            os.execve(os.path.join(EXEC_FILE_PATH, argvs[0]), argvs, newenv)
-                        except OSError:
-                            self.log.error('no such exec file.')
-                            os._exit(0)
-
-                    signal.pthread_sigmask(signal.SIG_BLOCK, range(1, signal.NSIG))
-                    jobs.new_job(newpid, cmd=command_line)
-                    signal.pthread_sigmask(signal.SIG_UNBLOCK, range(1, signal.NSIG))
-
-                    if is_backend is False:
-                        jobs.set_frontend_process(newpid)
-
-                        while jobs.get_frontend_process():
-                            time.sleep(1) # trivial, use `sigsuspend();` in c language.
-
-                        self.log.info("[FRONTEND] parent: %d, child: %d" % (os.getpid(), newpid))
-                    else:
-                        self.log.info("[BACKEND] parent: %d, child: %d, run: %s" % (os.getpid(), newpid, " ".join(argvs)))
-
-                    # unblock sigchld in parent process
-                    signal.pthread_sigmask(signal.SIG_UNBLOCK, [signal.SIGCHLD])
-                else:
-                    self._run_builtin_cmd(argvs)
+                self._run_cmd(argvs)
             except EOFError:
                 self._ignore_the_cmd()
             except OSError as e:
                 self.log.error(e)
                 self._ignore_the_cmd()
+
+    def _run_cmd(self, argvs):
+        """
+        """
+
+        if not self._is_builtin_cmd(argvs):
+            is_backend = False
+            if argvs[len(argvs) - 1] == '&':
+                is_backend = True
+                argvs = argvs[:-1]
+
+            self.log.info('create a new process...')
+            newpid = os.fork()
+            newenv = os.environ.copy() # must get it from parent process
+
+            # block sigchld
+            signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGCHLD])
+            if newpid == 0:
+                # unblock sigchld in child process
+                signal.pthread_sigmask(signal.SIG_UNBLOCK, [signal.SIGCHLD])
+
+                os.setpgid(0, 0) # 单独成组，用于kill
+                try:
+                    os.execve(os.path.join(EXEC_FILE_PATH, argvs[0]), argvs, newenv)
+                except OSError:
+                    self.log.error('no such exec file.')
+                    os._exit(os.EX_NOINPUT) # 文件不存在应该是哪个返回值？ TODO
+
+            signal.pthread_sigmask(signal.SIG_BLOCK, range(1, signal.NSIG))
+            jobs.new_job(newpid, cmd=' '.join(argvs))
+            signal.pthread_sigmask(signal.SIG_UNBLOCK, range(1, signal.NSIG))
+
+            if is_backend is False:
+                jobs.set_frontend_process(newpid)
+
+                while jobs.get_frontend_process():
+                    time.sleep(1) # trivial, use `sigsuspend();` in c language.
+
+                self.log.info("[FRONTEND] parent: %d, child: %d" % (os.getpid(), newpid))
+            else:
+                self.log.info("[BACKEND] parent: %d, child: %d, run: %s" % (os.getpid(), newpid, " ".join(argvs)))
+
+            # unblock sigchld in parent process
+            signal.pthread_sigmask(signal.SIG_UNBLOCK, [signal.SIGCHLD])
+        else:
+            self._run_builtin_cmd(argvs)
 
     def _ignore_the_cmd(self):
         """
@@ -94,13 +105,15 @@ class Shell():
         Params:
             cmd(string)
         Return:
-            args(list): cmd(argv[0]) + args
+
+            argvs(list): cmd(argv[0]) + cmd argvs
         """
-        # TODO must more complicate
+        # ignore ENTER and ctrl+z
         if cmd == '\n' or cmd == '':
-            return False, False
+            return None
+
         argvs = cmd.rstrip('\n').rstrip('').split(' ')
-        return True, argvs
+        return argvs
 
     def _is_builtin_cmd(self, argvs):
         """

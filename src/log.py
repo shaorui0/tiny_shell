@@ -4,8 +4,8 @@ import logging
 format_str = '%(levelname)s: %(asctime)s: %(filename)s:%(lineno)d * %(thread)d %(message)s'
 datefmt = '%y-%m-%d %H:%M:%S'
 formatter = logging.Formatter(format_str, datefmt)
-logging.basicConfig(filename='tsh.log', level=logging.INFO, format=format_str)
-#logging.basicConfig(level=logging.INFO, format=format_str)
+#logging.basicConfig(filename='tsh.log', level=logging.INFO, format=format_str)
+logging.basicConfig(level=logging.INFO, format=format_str)
 
 def with_log(cls):
     """属性方法

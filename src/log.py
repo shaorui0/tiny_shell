@@ -1,14 +1,10 @@
-# 装饰器，增加类方法
-
 import logging
 
-# config log
-# 默认日志配置，输出到控制台
+# 默认日志配置，输出到文件
 format_str = '%(levelname)s: %(asctime)s: %(filename)s:%(lineno)d * %(thread)d %(message)s'
 datefmt = '%y-%m-%d %H:%M:%S'
 formatter = logging.Formatter(format_str, datefmt)
-logging.basicConfig(level=logging.INFO, format=format_str)
-
+logging.basicConfig(filename='tsh.log', level=logging.INFO, format=format_str)
 
 def with_log(cls):
     """属性方法
@@ -24,4 +20,3 @@ def with_log(cls):
             return self._log
     cls.log = log
     return cls
-    # return 

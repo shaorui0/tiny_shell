@@ -30,6 +30,9 @@ class Shell():
                 self.log.info('parse a cmd: {}'.format(command_line))
                 is_normal_command, argvs = self._parse_cmd(command_line)
                 if is_normal_command is False:
+                    if command_line == '':
+                        sys.stdout.write('\n')
+                        sys.stdout.flush()
                     continue
 
                 if not self._is_builtin_cmd(argvs):
@@ -42,26 +45,35 @@ class Shell():
                     newpid = os.fork()
                     newenv = os.environ.copy() # must get it from parent process
 
-                    # child process
+                    # block sigchld
+                    signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGCHLD])
                     if newpid == 0:
+                        # unblock sigchld in child process
+                        signal.pthread_sigmask(signal.SIG_UNBLOCK, [signal.SIGCHLD])
+
                         os.setpgid(0, 0) # 单独成组，用于kill
                         try:
                             os.execve(os.path.join(EXEC_FILE_PATH, argvs[0]), argvs, newenv)
                         except OSError:
                             self.log.error('no such exec file.')
                             os._exit(0)
-                    
+
+                    signal.pthread_sigmask(signal.SIG_BLOCK, range(1, signal.NSIG))
                     jobs.new_job(newpid, cmd=command_line)
+                    signal.pthread_sigmask(signal.SIG_UNBLOCK, range(1, signal.NSIG))
+
                     if is_backend is False:
                         jobs.set_frontend_process(newpid)
 
                         while jobs.get_frontend_process():
-                            #sigsuspend(&prev_one);
-                            time.sleep(1) # trivial
+                            time.sleep(1) # trivial, use `sigsuspend();` in c language.
 
                         self.log.info("[FRONTEND] parent: %d, child: %d" % (os.getpid(), newpid))
                     else:
                         self.log.info("[BACKEND] parent: %d, child: %d, run: %s" % (os.getpid(), newpid, " ".join(argvs)))
+
+                    # unblock sigchld in parent process
+                    signal.pthread_sigmask(signal.SIG_UNBLOCK, [signal.SIGCHLD])
                 else:
                     self._run_builtin_cmd(argvs)
             except EOFError:
@@ -114,14 +126,17 @@ class Shell():
         self.log.info('running builtin command.')
         if argvs[0] == 'quit':
             os._exit(0)
+        
         elif argvs[0] == 'sleep':
             if len(argvs) != 2:
                 raise Exception("sleep command length must be '2'.")
             self._sleep(int(argvs[1]))
+        
         elif argvs[0] == 'jobs':
             if len(argvs) != 1:
                 raise Exception("sleep command length must be '1'.")
             jobs.print_jobs()
+        
         elif argvs[0] == 'bg':
             if len(argvs) != 2:
                 self.log.error('USAGE: bg [pid].')
@@ -144,17 +159,25 @@ class Shell():
                 self.log.error('no such job.')
             else:
                 self.log.info('[fg] pid = %s' % (argvs))
+
+                signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGCHLD])
+
                 signal.signal(signal.SIGCONT, signal.SIG_DFL)
                 os.kill(int(argvs[1]), signal.SIGCONT)
+
                 jobs.set_frontend_process(int(argvs[1]))
                 while jobs.get_frontend_process():
                     time.sleep(1)
+                
+                signal.pthread_sigmask(signal.SIG_UNBLOCK, [signal.SIGCHLD])
+
         elif argvs[0] == 'getgpid':
             if len(argvs) != 1:
                 self.log.error('USAGE: getgpid. No other parameters.')
             else:
                 sys.stdout.write(os.getpgid(int(argvs[1])))
                 sys.stdout.flush()
+        
         else:
             return
 
@@ -194,34 +217,36 @@ class Shell():
             pid, status = os.waitpid(-1, os.WNOHANG|os.WUNTRACED|os.WCONTINUED)
             if pid <= 0:
                 break
+
             self.log.info('[signal_child_handler] current pid = {}, status = {}\n'.format(pid, status))
-            # TODO lock
 
-            # if terminate signal, normally exit
+            # normally exit
             if os.WIFEXITED(status) or os.WIFSIGNALED(status):
-                # reap child process ==> while, reap as much as passible
+                signal.pthread_sigmask(signal.SIG_BLOCK, range(1, signal.NSIG))
                 if jobs.is_frontend_process(pid):
                     jobs.set_frontend_process(0)
-                
-                self.log.info('process [{}] terminated.'.format(pid))
 
-                # # TODO lock of signal
                 jobs.del_job_by_pid(pid)
+                sys.stdout.write('process [{}] terminated.'.format(pid))
+                sys.stdout.flush()
+                signal.pthread_sigmask(signal.SIG_UNBLOCK, range(1, signal.NSIG))
 
 
-            # if stop signal
+            # SIGTSTP
             if os.WIFSTOPPED(status):
+                signal.pthread_sigmask(signal.SIG_BLOCK, range(1, signal.NSIG))
+                
                 if jobs.is_frontend_process(pid):
                     jobs.set_frontend_process(0)
 
-                # # TODO lock of signal
-                jobs.update_job_status(pid, jobs.Stopped)
+                jobs.update_job_status(pid, jobs.STOPPED)
                 sys.stdout.write('process [{}] stopped.'.format(pid))
                 sys.stdout.flush()
 
-            if os.WIFCONTINUED(status):
-                signal.pthread_sigmask(signal.SIG_BLOCK, range(1, signal.NSIG))
-                jobs.update_job_status(pid, jobs.Running)
                 signal.pthread_sigmask(signal.SIG_UNBLOCK, range(1, signal.NSIG))
 
-            self.log.info('[signal_child_handler] signal_child_handler over!\n')
+            # sigcont
+            if os.WIFCONTINUED(status):
+                signal.pthread_sigmask(signal.SIG_BLOCK, range(1, signal.NSIG))
+                jobs.update_job_status(pid, jobs.RUNNING)
+                signal.pthread_sigmask(signal.SIG_UNBLOCK, range(1, signal.NSIG))

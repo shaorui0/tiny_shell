@@ -62,7 +62,8 @@ class Shell():
 
 
                 self._run_cmd(argvs)
-            except EOFError:
+            except EOFError as e:
+                self.log.error(e)
                 self._ignore_the_cmd()
             except OSError as e:
                 self.log.error(e)
@@ -88,11 +89,8 @@ class Shell():
                 signal.pthread_sigmask(signal.SIG_UNBLOCK, [signal.SIGCHLD])
 
                 os.setpgid(0, 0) # 单独成组，用于kill
-                try:
-                    os.execve(os.path.join(EXEC_FILE_PATH, argvs[0]), argvs, newenv)
-                except OSError:
-                    self.log.error('no such exec file.')
-                    os._exit(os.EX_NOINPUT) # 文件不存在应该是哪个返回值？ TODO
+                os.execve(os.path.join(EXEC_FILE_PATH, argvs[0]), argvs, newenv)
+                os._exit(0) # 文件不存在应该是哪个返回值？ TODO
 
             signal.pthread_sigmask(signal.SIG_BLOCK, range(1, signal.NSIG))
             jobs.new_job(newpid, cmd=' '.join(argvs))
@@ -246,7 +244,6 @@ class Shell():
             os.kill(jobs.get_frontend_process(), signal.SIGTSTP)
 
     def signal_child_handler(self, sig, frame):
-        self.log.info('[signal_child_handler] entry signal_child_handler')
         while True:
             pid, status = os.waitpid(-1, os.WNOHANG|os.WUNTRACED|os.WCONTINUED)
             if pid <= 0:

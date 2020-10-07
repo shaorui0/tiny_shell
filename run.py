@@ -15,10 +15,12 @@ class Jobs():
     
     # 重载一个getattr，避免获取没有存进来的process
     # TODO 枚举，三种状态：running、stopped、terminated
-    #def __getattr__(self, key):
-        # diff __get__
-    #    pass
-
+    def __getattr__(self, name):
+        if name in self:
+            return self[name]
+        else:
+            raise AttributeError(name)
+        
     # 前台进程
     def is_fg_process(self, pid):
         return pid == self.frontend_pid
@@ -27,6 +29,7 @@ class Jobs():
         return self.frontend_pid
     
     def set_frontend_process(self, pid):
+        # init status, pid == 0(start, restart)
         print('set_frontend_process {}'.format(pid))
         self.frontend_pid = pid
 
@@ -36,38 +39,51 @@ class Jobs():
                 'status': process_info['status'],
                 'pid': pid
             }))
+
     def print_jobs(self):
         """running/stopped/..
         """
-        print(self.total_job_map)
+        # TODO 删除using == 0的进程
+        # 【注】不能边遍历一个迭代器边删除（或增加）
+        for pid, child_info in self.total_job_map.items():
+            if child_info['using'] == 0:
+                continue
+            else:
+                print(pid, child_info)
+
+        #print(self.total_job_map) # TODO trivial
         return
 
-    def init_jobs():
-        pass
-
-
     def del_job_by_pid(self, pid):
-        print("del_job_by_pid")
-        jobs.total_job_map[pid]['using'] = 0
+        print("[del_job_by_pid] pid={} will be deleted.\n".format(pid))
+        if jobs.total_job_map[pid]['using'] == 1:
+            jobs.total_job_map[pid]['using'] = 0
+        # 不然我们说，没找到这个pid
+        else:
+            print("[del_job_by_pid] pid={} not be found.\n".format(pid))
 
     def get_job(self, pid):
-        return os.getpid(pid)
+        try:
+            if pid in jobs.total_job_map.keys() and jobs.total_job_map[pid]['using'] == 1:
+                return os.getpid(pid)
+        except:
+            print('[get_job] not be found.\n')
 
     def new_job(self, pid, cmd=None):
+        print('[new_job] running a child process', pid)
         self.total_job_map.update({
             pid: {
-            'status': 'running',
+            'status': 'Running',
             'cmd': cmd,
             'using': 1,
             }
         })
-        print('>>> running a child process', pid)
     
     # status怎么更新状态？也就是waitpid的返回值，返回pid表示当前进程终止，返回0表示什么，返回-1表示什么？
     def update_job_status(self, pid, status):
-        print(self.total_job_map)
+        print('[update_job_status] status of child process has changed:', pid, status)
+        #print(self.total_job_map)
         self.total_job_map[pid]['status'] = status
-        print('>>> status of child process has changed:', pid, status)
 
 
 jobs = Jobs()
@@ -111,8 +127,14 @@ class Shell():
                         #print('A new child ',  os.getpid())
                         #print('》》',  os.getpid())
                         # running
-                        os.execve(argvs[0], argvs, newenv) 
-                        #os._exit(0) # 或者直接在这里？退出时进行一次处理？退出以后，run之前
+                        # TODO 如果不是个正常的命令，直接退出就行了，也不用更新jobs
+
+                        try:
+                            os.execve(argvs[0], argvs, newenv)
+                        except OSError:
+                            print('**********')
+                            #print('stat={}'.format(stat))
+                            os._exit(0) # 或者直接在这里？退出时进行一次处理？退出以后，run之前
                     
                     # parent process
                     # add job to jobs
@@ -123,17 +145,16 @@ class Shell():
                         # TODO 需要阻塞在这里，suspend
                         # 什么意思？前台不为0，阻塞
                         # 前台为0，表示退出（stop/terminate）了进程
+
+                        # run frontend process
                         while jobs.get_frontend_process():
-                            import time
-                            time.sleep(1)
                             #sigsuspend(&prev_one);
-                        #os.waitpid(-1, 0)
-                        # terminated 
+                            time.sleep(1)
+
                         #jobs.update_job_status(newpid, 'terminated')
-                        print('>>>>> ',  jobs.total_job_map)
+                        jobs.print_jobs()
                         print("[FRONTEND] parent: %d, child: %d" % (os.getpid(), newpid))
                     else:
-                        #os.waitpid(-1, os.WNOHANG|os.WCONTINUED)
                         print("[BACKEND] parent: %d, child: %d, run: %s" % (os.getpid(), newpid, " ".join(argvs)))
                 else:
                     self._run_builtin_cmd(argvs)
@@ -170,7 +191,7 @@ class Shell():
         Params:
             argvs(list): check argv is builtin command
         """
-        if argvs[0] in ['quit', 'sleep', 'jobs', 'getgpid']:
+        if argvs[0] in ['quit', 'sleep', 'jobs', 'bg', 'fg', 'getgpid']:
             return True
         return False
 
@@ -190,6 +211,35 @@ class Shell():
             if len(argvs) != 1:
                 raise Exception("sleep command length must be '1'.")
             jobs.print_jobs()
+        elif argvs[0] == 'bg':
+            # TODO
+            if len(argvs) != 2:
+                print('no such job')
+            elif int(argvs[1]) not in jobs.total_job_map.keys():
+                print('no such job!')
+            else:
+                print('[bg]\n')
+                signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGCHLD])
+
+                signal.signal(signal.SIGCONT, signal.SIG_DFL)
+                os.kill(int(argvs[1]), signal.SIGCONT) # 继续执行
+
+                signal.pthread_sigmask(signal.SIG_UNBLOCK, [signal.SIGCHLD])
+
+        elif argvs[0] == 'fg':
+            # TODO
+            if len(argvs) != 2:
+                print('no such job')
+            elif int(argvs[1]) not in jobs.total_job_map.keys():
+                print('no such job!')
+            else:
+                print('[fg]\n{}\n'.format(str(argvs)))
+                signal.signal(signal.SIGCONT, signal.SIG_DFL)
+                os.kill(int(argvs[1]), signal.SIGCONT) # 继续执行
+                jobs.set_frontend_process(int(argvs[1]))
+                # 这里就直接执行了，但是后面还是有问题
+                while jobs.get_frontend_process(): # 这里是为了避免空转，但也不够精确
+                    time.sleep(1)
         elif argvs[0] == 'getgpid':
             # check len argvs
             print(os.getpgid(int(argvs[1])))
@@ -243,28 +293,29 @@ class Shell():
         # 这里的工作有很多了
         # how to check status? how to status?
         # waitpid?
-        print('entry signal_child_handler')
+        print('[signal_child_handler] entry signal_child_handler')
         while True:
             pid, status = os.waitpid(-1, os.WNOHANG|os.WUNTRACED|os.WCONTINUED)
             if pid <= 0:
                 break
-
+            print('[signal_child_handler] current pid = {}, status = {}\n'.format(pid, status))
             # TODO lock
 
             # if terminate signal, normally exit
             if os.WIFEXITED(status) or os.WIFSIGNALED(status):
-                sys.stdout.write('>>> process [{}] terminated.'.format(pid))
-                sys.stdout.flush()
                 # reap child process ==> while, reap as much as passible
                 # if fg process
                 if jobs.is_fg_process(pid):
-                    jobs.set_frontend_process(0) # 表示已经执行完了
-                else:
-                    sys.stdout.write('process [{}] terminated.'.format(pid))
-                    sys.stdout.flush()
+                    jobs.set_frontend_process(0)
+                
+                sys.stdout.write('process [{}] terminated.'.format(pid))
+                sys.stdout.flush()
+
                 # else parent process
                 #jobs.update_job_status(pid, 'terminated')
-                # delete job info in jobs # TODO lock of signal
+                # delete job info in jobs 
+
+                # # TODO lock of signal
                 jobs.del_job_by_pid(pid)
 
 
@@ -273,15 +324,25 @@ class Shell():
                 if jobs.is_fg_process(pid):
                     jobs.set_frontend_process(0)
                 #JobPtr jp = find_job_by_pid(pid);
+
+                # # TODO lock of signal
+                # set job status stopped
                 jobs.update_job_status(pid, 'Stopped')
                 sys.stdout.write('process [{}] stopped.'.format(pid))
                 sys.stdout.flush()
-                # set current fg process status
-                # set fg process 0
+
                 # 如何在将来得以重新执行起来？
-                # print stopped
+
             # TODO sigcontinue
-            
+            # 如何通过bg or fg触发这个信号？
+            if os.WIFCONTINUED(status):
+                print('[continue]')
+                # TODO check bg or fg? or only support fg?
+                signal.pthread_sigmask(signal.SIG_BLOCK, range(1, signal.NSIG))
+                jobs.update_job_status(pid, 'Running')
+                signal.pthread_sigmask(signal.SIG_UNBLOCK, range(1, signal.NSIG))
+
             # TODO if bg / fg，continue
+            print('[signal_child_handler] signal_child_handler over!\n')
 shell = Shell()
 shell.loop()

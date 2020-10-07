@@ -29,16 +29,37 @@ class Shell():
                 
                 self.log.info('parse a cmd: {}'.format(command_line))
                 argvs = self._parse_cmd(command_line)
+
                 if argvs is None:
                     if command_line == '':
                         sys.stdout.write('\n')
                         sys.stdout.flush()
-                    return
+                    continue
 
                 # TODO 判断重定向
+                if '>' in argvs:
+                    index = argvs.index('>')
+                    file_name = argvs[index + 1]
+
+                    a_fd = os.open(file_name, os.O_WRONLY|os.O_CREAT|os.O_TRUNC)
+                    if os.dup2(a_fd, 1) < 0:
+                        return -1
+
+                    argvs = argvs[: index]
+
+                    os.close(a_fd)
 
 
                 # TODO 判断管道（多次执行）
+                # 多次进行输入与输出
+                # echo aaa | grep bbb
+                # 解析
+                # for exec
+                    # if last cmd
+                        # stdin => stdout
+                    # open fd1
+                    # stdout => stdin
+
 
                 self._run_cmd(argvs)
             except EOFError:
@@ -50,7 +71,6 @@ class Shell():
     def _run_cmd(self, argvs):
         """
         """
-
         if not self._is_builtin_cmd(argvs):
             is_backend = False
             if argvs[len(argvs) - 1] == '&':
@@ -112,7 +132,7 @@ class Shell():
         if cmd == '\n' or cmd == '':
             return None
 
-        argvs = cmd.rstrip('\n').rstrip('').split(' ')
+        argvs = cmd.rstrip('\n').rstrip(' ').split(' ')
         return argvs
 
     def _is_builtin_cmd(self, argvs):
@@ -146,8 +166,8 @@ class Shell():
             self._sleep(int(argvs[1]))
         
         elif argvs[0] == 'jobs':
-            if len(argvs) != 1:
-                raise Exception("sleep command length must be '1'.")
+            #if len(argvs) != 1:
+            #    raise Exception("jobs command length must be '1'.")
             jobs.print_jobs()
         
         elif argvs[0] == 'bg':
@@ -187,6 +207,7 @@ class Shell():
         elif argvs[0] == 'getgpid':
             if len(argvs) != 1:
                 self.log.error('USAGE: getgpid. No other parameters.')
+                raise Exception('USAGE: getgpid. No other parameters.')
             else:
                 sys.stdout.write(os.getpgid(int(argvs[1])))
                 sys.stdout.flush()
@@ -258,7 +279,7 @@ class Shell():
 
                 signal.pthread_sigmask(signal.SIG_UNBLOCK, range(1, signal.NSIG))
 
-            # sigcont
+            # SIGCONT
             if os.WIFCONTINUED(status):
                 signal.pthread_sigmask(signal.SIG_BLOCK, range(1, signal.NSIG))
                 jobs.update_job_status(pid, jobs.RUNNING)

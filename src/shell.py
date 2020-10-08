@@ -32,11 +32,10 @@ class Shell():
 
                 if arr_argvs is None:
                     if command_line == '':
-                        sys.stdout.write('\n')
-                        sys.stdout.flush()
+                        self._ignore_the_cmd()
                     continue
 
-                # run PIPE
+                # run a normal command or pipe command
                 read = 0
                 for idx, argvs in enumerate(arr_argvs):
                     # last one
@@ -60,7 +59,7 @@ class Shell():
                 self._ignore_the_cmd()
 
     def _run_cmd(self, argvs, read_fd=0, write_fd=1):
-        """
+        """main program run by a single command
         """
         if not self._is_builtin_cmd(argvs):
             # handle backend process
@@ -119,13 +118,16 @@ class Shell():
     def _parse_cmd(self, cmd):
         """
         Params:
-            cmd(string)
+            cmd(string): it may be a command connected by a pipe.
         Return:
-            arr_argvs(list): [
-                cmd1(argvs[0]) + cmd1 (argvs[1:]), 
-                cmd2(argvs[0]) + cmd2 (argvs[1:]), 
-                ...
-            ]
+            a list of list include commands for running.
+            
+            Example:
+                arr_argvs(list): [
+                    cmd1(list), 
+                    cmd2(list), 
+                    ...
+                ]
         """
         # ignore ENTER and ctrl+z
         if cmd == '\n' or cmd == '':

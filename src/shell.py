@@ -7,7 +7,7 @@ from log import with_log
 from jobs import Jobs
 
 
-EXEC_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'exec_file')
+EXEC_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
 jobs = Jobs()
 
 @with_log
@@ -36,6 +36,7 @@ class Shell():
                         sys.stdout.flush()
                     continue
 
+                # run PIPE
                 read = 0
                 for idx, argvs in enumerate(arr_argvs):
                     # last one
@@ -78,7 +79,7 @@ class Shell():
                 # unblock sigchld in child process
                 signal.pthread_sigmask(signal.SIG_UNBLOCK, [signal.SIGCHLD])
 
-                os.setpgid(0, 0) # One group id per child process for os.kill()
+                os.setpgid(0, 0) # one group id per child process for os.kill()
 
                 if read_fd != 0:
                     os.dup2(read_fd, 0)
@@ -90,13 +91,13 @@ class Shell():
                 os.execve(os.path.join(EXEC_FILE_PATH, argvs[0]), argvs, newenv)
 
             signal.pthread_sigmask(signal.SIG_BLOCK, range(1, signal.NSIG))
-            jobs.new_job(newpid, cmd=' '.join(argvs))
+            jobs._new_job(newpid, cmd=' '.join(argvs))
             signal.pthread_sigmask(signal.SIG_UNBLOCK, range(1, signal.NSIG))
 
             if is_backend is False:
-                jobs.set_frontend_process(newpid)
+                jobs._set_frontend_process(newpid)
 
-                while jobs.get_frontend_process():
+                while jobs._get_frontend_process():
                     time.sleep(1) # trivial, use `sigsuspend()` in c language.
 
                 self.log.info("[FRONTEND] parent: %d, child: %d" % (os.getpid(), newpid))
@@ -174,7 +175,7 @@ class Shell():
         elif argvs[0] == 'jobs':
             if len(argvs) != 1:
                 raise Exception("jobs command length must be '1'.")
-            jobs.print_jobs()
+            jobs._print_jobs()
         
         elif argvs[0] == 'bg':
             if len(argvs) != 2:
@@ -204,8 +205,8 @@ class Shell():
                 signal.signal(signal.SIGCONT, signal.SIG_DFL)
                 os.kill(int(argvs[1]), signal.SIGCONT)
 
-                jobs.set_frontend_process(int(argvs[1]))
-                while jobs.get_frontend_process():
+                jobs._set_frontend_process(int(argvs[1]))
+                while jobs._get_frontend_process():
                     time.sleep(1)
                 
                 signal.pthread_sigmask(signal.SIG_UNBLOCK, [signal.SIGCHLD])
@@ -233,23 +234,23 @@ class Shell():
 
     def signal_terminal_handler(self, sig, frame):
         self.log.info('will handle terminal signal')
-        if jobs.is_frontend_process(0):
+        if jobs._is_frontend_process(0):
             self.log.info('shell has terminated, {}'.format(str(os.getpid())))
             signal.signal(signal.SIGINT, signal.SIG_DFL)
             os.kill(os.getpid(), signal.SIGINT)
         else:
             self.log.info('child has terminated, {}'.format(str(os.getpid())))
-            os.kill(jobs.get_frontend_process(), signal.SIGINT)
+            os.kill(jobs._get_frontend_process(), signal.SIGINT)
 
     def signal_stop_handler(self, sig, frame):
         self.log.info('will handle stop signal')
-        if jobs.is_frontend_process(0):
+        if jobs._is_frontend_process(0):
             self.log.info('shell has stopped, {}'.format(str(os.getpid())))
             signal.signal(signal.SIGTSTP, signal.SIG_DFL)
             os.kill(os.getpid(), signal.SIGTSTP)
         else:
             self.log.info('child has stopped, {}'.format(str(os.getpid())))
-            os.kill(jobs.get_frontend_process(), signal.SIGTSTP)
+            os.kill(jobs._get_frontend_process(), signal.SIGTSTP)
 
     def signal_child_handler(self, sig, frame):
         while True:
@@ -262,10 +263,10 @@ class Shell():
             # normally exit
             if os.WIFEXITED(status) or os.WIFSIGNALED(status):
                 signal.pthread_sigmask(signal.SIG_BLOCK, range(1, signal.NSIG))
-                if jobs.is_frontend_process(pid):
-                    jobs.set_frontend_process(0)
+                if jobs._is_frontend_process(pid):
+                    jobs._set_frontend_process(0)
 
-                jobs.del_job_by_pid(pid)
+                jobs._del_job_by_pid(pid)
                 sys.stdout.write('process [{}] terminated.'.format(pid))
                 sys.stdout.flush()
                 signal.pthread_sigmask(signal.SIG_UNBLOCK, range(1, signal.NSIG))
@@ -275,10 +276,10 @@ class Shell():
             if os.WIFSTOPPED(status):
                 signal.pthread_sigmask(signal.SIG_BLOCK, range(1, signal.NSIG))
                 
-                if jobs.is_frontend_process(pid):
-                    jobs.set_frontend_process(0)
+                if jobs._is_frontend_process(pid):
+                    jobs._set_frontend_process(0)
 
-                jobs.update_job_status(pid, jobs.STOPPED)
+                jobs._update_job_status(pid, jobs.STOPPED)
                 sys.stdout.write('process [{}] stopped.'.format(pid))
                 sys.stdout.flush()
 
@@ -287,5 +288,5 @@ class Shell():
             # SIGCONT
             if os.WIFCONTINUED(status):
                 signal.pthread_sigmask(signal.SIG_BLOCK, range(1, signal.NSIG))
-                jobs.update_job_status(pid, jobs.RUNNING)
+                jobs._update_job_status(pid, jobs.RUNNING)
                 signal.pthread_sigmask(signal.SIG_UNBLOCK, range(1, signal.NSIG))

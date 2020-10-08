@@ -118,7 +118,7 @@
 
 ## 系统流程图及说明
 
-![system_design](./readme_src/system_img.png)
+![system_design](./readme/system_img.png)
 
 
 ## 与外部系统的接口

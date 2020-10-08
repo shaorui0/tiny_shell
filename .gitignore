@@ -1,0 +1,4 @@
+src/__pycache__/
+tsh.log
+.vscode/
+.DS_Store

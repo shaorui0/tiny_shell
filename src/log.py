@@ -6,8 +6,6 @@ datefmt = '%y-%m-%d %H:%M:%S'
 formatter = logging.Formatter(format_str, datefmt)
 # file: 
 logging.basicConfig(filename='tsh.log', level=logging.INFO, format=format_str)
-# stdout: 
-# logging.basicConfig(level=logging.INFO, format=format_str)
 
 def with_log(cls):
     """属性方法

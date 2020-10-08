@@ -28,40 +28,29 @@ class Shell():
                 command_line = sys.stdin.readline()
                 
                 self.log.info('parse a cmd: {}'.format(command_line))
-                argvs = self._parse_cmd(command_line)
+                arr_argvs = self._parse_cmd(command_line)
 
-                if argvs is None:
+                if arr_argvs is None:
                     if command_line == '':
                         sys.stdout.write('\n')
                         sys.stdout.flush()
                     continue
 
-                # TODO 判断重定向
-                if '>' in argvs:
-                    index = argvs.index('>')
-                    file_name = argvs[index + 1]
+                read = 0
+                for idx, argvs in enumerate(arr_argvs):
+                    # last one
+                    if idx == len(arr_argvs) - 1:
+                        if read != 0:
+                            os.dup2(read, 0)
+                        self._run_cmd(argvs, read, 1)
+                        continue
 
-                    a_fd = os.open(file_name, os.O_WRONLY|os.O_CREAT|os.O_TRUNC)
-                    if os.dup2(a_fd, 1) < 0:
-                        return -1
+                    read_fd, write_fd = os.pipe()
+                    self._run_cmd(argvs, read, write_fd)
+                    os.close(write_fd)
 
-                    argvs = argvs[: index]
+                    read = read_fd
 
-                    os.close(a_fd)
-
-
-                # TODO 判断管道（多次执行）
-                # 多次进行输入与输出
-                # echo aaa | grep bbb
-                # 解析
-                # for exec
-                    # if last cmd
-                        # stdin => stdout
-                    # open fd1
-                    # stdout => stdin
-
-
-                self._run_cmd(argvs)
             except EOFError as e:
                 self.log.error(e)
                 self._ignore_the_cmd()
@@ -69,10 +58,11 @@ class Shell():
                 self.log.error(e)
                 self._ignore_the_cmd()
 
-    def _run_cmd(self, argvs):
+    def _run_cmd(self, argvs, read_fd=0, write_fd=1):
         """
         """
         if not self._is_builtin_cmd(argvs):
+            # handle backend process
             is_backend = False
             if argvs[len(argvs) - 1] == '&':
                 is_backend = True
@@ -88,9 +78,16 @@ class Shell():
                 # unblock sigchld in child process
                 signal.pthread_sigmask(signal.SIG_UNBLOCK, [signal.SIGCHLD])
 
-                os.setpgid(0, 0) # 单独成组，用于kill
+                os.setpgid(0, 0) # One group id per child process for os.kill()
+
+                if read_fd != 0:
+                    os.dup2(read_fd, 0)
+                    os.close(read_fd)
+                if write_fd != 1:
+                    os.dup2(write_fd, 1)
+                    os.close(write_fd)
+                    
                 os.execve(os.path.join(EXEC_FILE_PATH, argvs[0]), argvs, newenv)
-                os._exit(0) # 文件不存在应该是哪个返回值？ TODO
 
             signal.pthread_sigmask(signal.SIG_BLOCK, range(1, signal.NSIG))
             jobs.new_job(newpid, cmd=' '.join(argvs))
@@ -100,7 +97,7 @@ class Shell():
                 jobs.set_frontend_process(newpid)
 
                 while jobs.get_frontend_process():
-                    time.sleep(1) # trivial, use `sigsuspend();` in c language.
+                    time.sleep(1) # trivial, use `sigsuspend()` in c language.
 
                 self.log.info("[FRONTEND] parent: %d, child: %d" % (os.getpid(), newpid))
             else:
@@ -123,20 +120,31 @@ class Shell():
         Params:
             cmd(string)
         Return:
-
-            argvs(list): cmd(argv[0]) + cmd argvs
+            arr_argvs(list): [
+                cmd1(argvs[0]) + cmd1 (argvs[1:]), 
+                cmd2(argvs[0]) + cmd2 (argvs[1:]), 
+                ...
+            ]
         """
         # ignore ENTER and ctrl+z
         if cmd == '\n' or cmd == '':
             return None
 
-        argvs = cmd.rstrip('\n').rstrip(' ').split(' ')
+        # PIPE 
+        cmds = list()
+        if '|' in cmd:
+            cmds = cmd.split('|')
+            argvs = list()
+            for cur_cmd in cmds:
+                argvs.append(cur_cmd.strip(' ').rstrip(' ').split(' '))
+        else:
+            argvs = [cmd.rstrip('\n').rstrip(' ').split(' ')]
         return argvs
 
     def _is_builtin_cmd(self, argvs):
         """
         Params:
-            argvs(list): check argv is builtin command
+            argvs(list): check argvs is builtin command
         """
         if argvs[0] in [
             'quit', 
@@ -164,8 +172,8 @@ class Shell():
             self._sleep(int(argvs[1]))
         
         elif argvs[0] == 'jobs':
-            #if len(argvs) != 1:
-            #    raise Exception("jobs command length must be '1'.")
+            if len(argvs) != 1:
+                raise Exception("jobs command length must be '1'.")
             jobs.print_jobs()
         
         elif argvs[0] == 'bg':
@@ -228,7 +236,7 @@ class Shell():
         if jobs.is_frontend_process(0):
             self.log.info('shell has terminated, {}'.format(str(os.getpid())))
             signal.signal(signal.SIGINT, signal.SIG_DFL)
-            os.kill(os.getpid(), signal.SIGINT) # 为什么无法退出？说找不到process？
+            os.kill(os.getpid(), signal.SIGINT)
         else:
             self.log.info('child has terminated, {}'.format(str(os.getpid())))
             os.kill(jobs.get_frontend_process(), signal.SIGINT)

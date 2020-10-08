@@ -13,7 +13,6 @@ class Jobs():
     frontend_pid = 0
     total_job_map = dict()
 
-    # 前台进程
     def is_frontend_process(self, pid):
         return pid == self.frontend_pid
 

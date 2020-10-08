@@ -13,18 +13,17 @@ class Jobs():
     frontend_pid = 0
     total_job_map = dict()
 
-    def is_frontend_process(self, pid):
+    def _is_frontend_process(self, pid):
         return pid == self.frontend_pid
 
-    def get_frontend_process(self):
+    def _get_frontend_process(self):
         return self.frontend_pid
     
-    def set_frontend_process(self, pid):
-        # init status, pid == 0(start, restart)
-        self.log.info('set_frontend_process {}'.format(pid))
+    def _set_frontend_process(self, pid):
+        self.log.info('_set_frontend_process {}'.format(pid))
         self.frontend_pid = pid
 
-    def print_jobs(self):
+    def _print_jobs(self):
         """running/stopped/..
         """
         for pid, child_info in self.total_job_map.items():
@@ -33,22 +32,22 @@ class Jobs():
             sys.stdout.write(str(pid) + '\t' + str(child_info))
             sys.stdout.flush()
 
-    def del_job_by_pid(self, pid):
-        self.log.info("[del_job_by_pid] pid={} will be deleted.\n".format(pid))
+    def _del_job_by_pid(self, pid):
+        self.log.info("[_del_job_by_pid] pid={} will be deleted.\n".format(pid))
         if self.total_job_map[pid]['using'] == self.UNTERMINATED:
             self.total_job_map[pid]['using'] = self.TERMINATED
         else:
-            self.log.info("[del_job_by_pid] pid={} not be found.\n".format(pid))
+            self.log.info("[_del_job_by_pid] pid={} not be found.\n".format(pid))
 
-    def get_job(self, pid):
+    def _get_job(self, pid):
         try:
             if pid in self.total_job_map.keys() and self.total_job_map[pid]['using'] == self.UNTERMINATED:
                 return os.getpid(pid)
         except:
-            self.log.info('[get_job] not be found.\n')
+            self.log.info('[_get_job] not be found.\n')
 
-    def new_job(self, pid, cmd=None):
-        self.log.info('[new_job] running a child process: %d' % (pid))
+    def _new_job(self, pid, cmd=None):
+        self.log.info('[_new_job] running a child process: %d' % (pid))
         self.total_job_map.update({
             pid: {
             'status': self.RUNNING,
@@ -57,6 +56,6 @@ class Jobs():
             }
         })
     
-    def update_job_status(self, pid, status):
-        self.log.info('[update_job_status] status of child process[%d] has changed: %s' % (pid, status))
+    def _update_job_status(self, pid, status):
+        self.log.info('[_update_job_status] status of child process[%d] has changed: %s' % (pid, status))
         self.total_job_map[pid]['status'] = status

@@ -18,6 +18,54 @@ Shell是Unix程序的典型示例。它触及了Unix系统能够提供的所有�
 - linux如何管理job？
 - 前台后台进程是怎么回事？
 
+# 使用
+
+
+## 文件结构
+
+tsh.py      : tsh启动main函数
+pipe_demo.c : 管道实现demo（c语言）
+
+./src: 程序主代码
+- shell.py, shell驱动程序类
+- jobs.py, job管理类
+- log.py, 日志类
+
+./data: 可执行程序
+- my_sleep  : USAGE > sleep 10
+- my_echo   : USAGE > my_echo helloworld
+
+## 启动方式
+
+```py
+python3 tsh.py
+```
+
+## 支持的命令
+
+```sh
+quit
+getgpid pid
+
+my_echo helloworld
+
+my_sleep 10
+my_slepp 100 &
+
+jobs
+bg pid(use with 'my_sleep' command)
+fg pid(use with 'my_sleep' command)
+
+signal control(use with 'my_sleep' command):
+    ctrl + z
+    ctrl + c
+
+(redirect and pipe control are not perfect currently)
+my_echo helloworld > a_file 
+my_echo helloworld | quit
+
+```
+
 # 设计目标
 
 一个shell的雏形，不同技术分支的功能要能实现（内置命令、可执行文件、作业管理、重定向、管道）
@@ -193,48 +241,3 @@ OSError:
     - 发生**抢占zombie**时汇报错（正常退出`_exit` + SIGCHLD处理）
 
 
-
-## 文件结构
-
-tsh.py      : tsh启动main函数
-pipe_demo.c : 管道实现demo（c语言）
-
-./src: 程序主代码
-- shell.py, shell驱动程序类
-- jobs.py, job管理类
-- log.py, 日志类
-
-./data: 可执行程序
-- my_sleep  : USAGE > sleep 10
-- my_echo   : USAGE > my_echo helloworld
-
-## 启动方式
-
-```py
-python3 tsh.py
-```
-
-## 支持的命令
-
-```sh
-quit
-getgpid pid
-
-my_echo helloworld
-
-my_sleep 10
-my_slepp 100 &
-
-jobs
-bg pid(use with 'my_sleep' command)
-fg pid(use with 'my_sleep' command)
-
-signal control(use with 'my_sleep' command):
-    ctrl + z
-    ctrl + c
-
-(redirect and pipe control are not perfect currently)
-my_echo helloworld > a_file 
-my_echo helloworld | quit
-
-```

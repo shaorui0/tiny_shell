@@ -9,7 +9,7 @@
 #include <sys/types.h> /* pid_t */
 #include <unistd.h>
 
-#define PROGNAME "pipeline-three-processes"
+#define PROGNAME "pipe-demo"
 
 #define Close(FD) do {                                  \
     int Close_fd = (FD);                                \
